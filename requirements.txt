@@ -1,0 +1,4 @@
+scrapy
+python-dotenv
+psycopg2-binary
+boto3
