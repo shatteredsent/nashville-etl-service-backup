@@ -3,9 +3,20 @@ import sqlite3
 import subprocess
 import sys
 from flask import Flask, render_template_string, redirect, url_for, request
+from datetime import datetime
+
 app = Flask(__name__)
 DB_FILE = "scraped_data.db"
 PER_PAGE = 25
+def format_date_filter(iso_date_str):
+    if not iso_date_str:
+        return "N/A"
+    try:
+        dt_object = datetime.fromisoformat(iso_date_str)
+        return dt_object.strftime('%b %d, %Y at %I:%M %p')
+    except (ValueError, TypeError):
+        return iso_date_str
+app.jinja_env.filters['format_date'] = format_date_filter
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -19,12 +30,12 @@ def init_db():
             venue_address TEXT,
             description TEXT,
             source TEXT,
-            category TEXT
+            category TEXT,
+            genre TEXT
         )
     ''')
     conn.commit()
     conn.close()
-    print("Database initialized.")
 @app.route('/')
 def index():
     page = request.args.get('page', 1, type=int)
@@ -35,16 +46,18 @@ def index():
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    sources_query = cursor.execute("SELECT DISTINCT source FROM events ORDER BY source")
+    sources_query = cursor.execute(
+        "SELECT DISTINCT source FROM events ORDER BY source")
     sources = [row['source'] for row in sources_query.fetchall()]
     params = []
     where_clause = ""
     if selected_source:
         where_clause = "WHERE source = ?"
         params.append(selected_source)
-    total_events_query = cursor.execute(f"SELECT COUNT(*) FROM events {where_clause}", params)
+    total_events_query = cursor.execute(
+        f"SELECT COUNT(*) FROM events {where_clause}", params)
     total_events = total_events_query.fetchone()[0]
-    total_pages = (total_events + PER_PAGE - 1)
+    total_pages = (total_events + PER_PAGE - 1) // PER_PAGE
     final_query = f"SELECT * FROM events {where_clause} ORDER BY event_date ASC LIMIT ? OFFSET ?"
     final_params = []
     if selected_source:
@@ -87,14 +100,14 @@ def index():
         </style>
     </head>
     <body>
-        <h1>SPIDEY-SENSES TINGLING</h1>
+        <h1>MY SPIDEY-SENSES TINGLING</h1>
         <div class="controls-container">
             <div>
                 <form action="/scrape" method="post" style="display: inline-block;">
-                    <button class="action-button scrape-button">RUN SUPER CREEPY STEALTHY ARACHNIDS </button>
+                    <button class="action-button scrape-button">Initiate Super Creepy Arachnids!</button>
                 </form>
                 <form action="/clear" method="post" style="display: inline-block;">
-                    <button class="action-button clear-button">CLEAR DATA</button>
+                    <button class="action-button clear-button">Clear Data</button>
                 </form>
             </div>
             <div class="filter-form">
@@ -111,12 +124,14 @@ def index():
             </div>
         </div>
         <table>
-            <tr><th>Name</th><th>Address</th><th>Venue</th><th>Source</th></tr>
+            <tr><th>Name</th><th>Date</th><th>Venue</th><th>Address</th><th>Source</th></tr>
             {% for event in events %}
             <tr>
                 <td><a href="{{ event.url }}" target="_blank">{{ event.name }}</a></td>
-                <td>{{ event.venue_address }}</td>
+                <!-- APPLY THE NEW 'format_date' FILTER HERE -->
+                <td>{{ event.event_date | format_date }}</td>
                 <td>{{ event.venue_name }}</td>
+                <td>{{ event.venue_address }}</td>
                 <td>{{ event.source }}</td>
             </tr>
             {% endfor %}
@@ -149,29 +164,19 @@ def clear_data():
         cursor.execute("DELETE FROM events")
         conn.commit()
         conn.close()
-        print("Database cleared by user.")
     return redirect(url_for('index'))
 @app.route('/scrape', methods=['POST'])
 def scrape():
-    init_db()
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM events")
-    conn.commit()
-    conn.close()
     runner_script = os.path.join(os.path.dirname(__file__), 'runner.py')
     python_executable = sys.executable
-    print("--- GO! GO! GO! GO! RUNNER! YOU CAN DO IT! PUT YOUR SCRIPT IN TO IT!!!! ---")
     try:
         subprocess.run([python_executable, runner_script],
-                         check=True, capture_output=True, text=True)
+                       check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as e:
-        print("--- OH NO!!!! IT BROKE!!!! COMPLETE FAILURE!!! TIME TO GROW HAIR JUST TO PULL IT OUT!! ---")
+        print("--- RUNNER SCRIPT FAILED ---")
         print("STDOUT:", e.stdout)
         print("STDERR:", e.stderr)
-    print("--- OK RUNNER! THAT IS ALL. YOU DID GOOD. GO GET SOME BYTES AND RECHARGE!!! ---")
     return redirect(url_for('index'))
 if __name__ == "__main__":
     init_db()
-    app.run(host='0.0.0.0', port=8000, debug=True)
-
+    app.run(debug=True)

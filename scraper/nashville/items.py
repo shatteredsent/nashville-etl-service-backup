@@ -22,3 +22,4 @@ class BusinessItem(scrapy.Item):
     venue_address = scrapy.Field()
     event_date = scrapy.Field()
     category = scrapy.Field()
+    genre = scrapy.Field()
