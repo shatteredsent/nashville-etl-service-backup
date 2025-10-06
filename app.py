@@ -88,14 +88,14 @@ def index():
         </style>
     </head>
     <body>
-        <h1>Nashville Scraped Data</h1>
+        <h1>SPIDEY-SENSES TINGLING</h1>
         <div class="controls-container">
             <div>
                 <form action="/scrape" method="post" style="display: inline-block;">
-                    <button class="action-button scrape-button">Run All Scrapers & Refresh Data</button>
+                    <button class="action-button scrape-button">RUN SUPER CREEPY STEALTHY ARACHNIDS </button>
                 </form>
                 <form action="/clear" method="post" style="display: inline-block;">
-                    <button class="action-button clear-button">Clear Displayed Data</button>
+                    <button class="action-button clear-button">CLEAR DATA</button>
                 </form>
             </div>
             <div class="filter-form">
@@ -155,14 +155,14 @@ def clear_data():
 def scrape():
     runner_script = os.path.join(os.path.dirname(__file__), 'runner.py')
     python_executable = sys.executable
-    print("--- Starting runner.py as a subprocess ---")
+    print("--- GO! GO! GO! GO! RUNNER! YOU CAN DO IT! PUT YOUR SCRIPT IN TO IT!!!! ---")
     try:
         subprocess.run([python_executable, runner_script], check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as e:
-        print("--- runner.py failed ---")
+        print("--- OH NO!!!! IT BROKE!!!! COMPLETE FAILURE!!! TIME TO GROW HAIR JUST TO PULL IT OUT!! ---")
         print("STDOUT:", e.stdout)
         print("STDERR:", e.stderr)
-    print("--- runner.py finished ---")
+    print("--- OK RUNNER! THAT IS ALL. YOU DID GOOD. GO GET SOME BYTES AND RECHARGE!!! ---")
     return redirect(url_for('index'))
 if __name__ == "__main__":
     init_db()
