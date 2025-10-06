@@ -9,3 +9,9 @@ env/
 
 .vscode/
 .idea/
+# Scraped data files
+*_events.json
+*_events.jsonl
+*_raw.json
+*_transformed.json
+scraped_data.db
