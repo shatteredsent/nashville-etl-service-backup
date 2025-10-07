@@ -1,0 +1,49 @@
+{
+    "nashville.com-events": {
+        "start_url": "https://www.nashville.com/calendar-of-events/",
+        "item_container_selector": "div.tribe-events-calendar-list__event-row",
+        "fields": {
+            "name": "css:h3.tribe-events-calendar-list__event-title a::text",
+            "url": "css:h3.tribe-events-calendar-list__event-title a::attr(href)"
+        },
+        "detail_page_fields": {
+            "event_date": "css:span.tribe-event-date-start::text",
+            "venue_name": "css:dd.tribe-venue a::text",
+            "venue_address": "css:span.tribe-street-address::text",
+            "description": "css:div.tribe-events-single-event-description ::text"
+        },
+        "uses_playwright": true,
+        "category": "event"
+    },
+    "nashville.com-hotels": {
+        "start_url": "https://www.nashville.com/hotels/",
+        "item_anchor_selector": "div.entry a[rel='no follow']",
+        "parent_container_tag": "p",
+        "name_filter_out": "Best Rate",
+        "fields": {
+            "name": "css:a[rel='no follow']::text, span[style*='font-size: 14pt;'] a::text",
+            "url": "css:a[rel='no follow']::attr(href)",
+            "venue_address": "css:span._2iem strong::text",
+            "description": "xpath:.//br[1]/following-sibling::text()"
+        },
+        "uses_playwright": true,
+        "category": "hotel"
+    },
+    "underdog": {
+        "start_url": "https://tunehatch.com/e/upcomingShows/12778804/darkMode=true",
+        "item_container_selector": ".flyerCardContainer",
+        "fields": {
+            "name": "css:h1.text-2xl.font-black::text",
+            "url": "css:a::attr(href)",
+            "event_date": "css:h2::text"
+        },
+        "uses_playwright": true,
+        "category": "event",
+        "wait_after_load": 5000,
+        "defaults": {
+            "venue_name": "The Underdog",
+            "venue_address": "Nashville, TN"
+        }
+    }
+}
+
