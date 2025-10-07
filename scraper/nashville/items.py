@@ -23,3 +23,4 @@ class BusinessItem(scrapy.Item):
     event_date = scrapy.Field()
     category = scrapy.Field()
     genre = scrapy.Field()
+    season = scrapy.Field()

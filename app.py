@@ -8,15 +8,17 @@ from datetime import datetime
 app = Flask(__name__)
 DB_FILE = "scraped_data.db"
 PER_PAGE = 25
+
 def format_date_filter(iso_date_str):
     if not iso_date_str:
-        return "N/A"
+        return ""
     try:
         dt_object = datetime.fromisoformat(iso_date_str)
         return dt_object.strftime('%b %d, %Y at %I:%M %p')
     except (ValueError, TypeError):
         return iso_date_str
 app.jinja_env.filters['format_date'] = format_date_filter
+
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -31,11 +33,13 @@ def init_db():
             description TEXT,
             source TEXT,
             category TEXT,
-            genre TEXT
+            genre TEXT,
+            season TEXT
         )
     ''')
     conn.commit()
     conn.close()
+
 @app.route('/')
 def index():
     page = request.args.get('page', 1, type=int)
@@ -58,7 +62,7 @@ def index():
         f"SELECT COUNT(*) FROM events {where_clause}", params)
     total_events = total_events_query.fetchone()[0]
     total_pages = (total_events + PER_PAGE - 1) // PER_PAGE
-    final_query = f"SELECT * FROM events {where_clause} ORDER BY event_date ASC LIMIT ? OFFSET ?"
+    final_query = f"SELECT * FROM events {where_clause} ORDER BY event_date ASC, name ASC LIMIT ? OFFSET ?"
     final_params = []
     if selected_source:
         final_params.append(selected_source)
@@ -100,14 +104,14 @@ def index():
         </style>
     </head>
     <body>
-        <h1>MY SPIDEY-SENSES TINGLING</h1>
+        <h1>SPIDEY-SENSES TINGLING</h1>
         <div class="controls-container">
             <div>
                 <form action="/scrape" method="post" style="display: inline-block;">
-                    <button class="action-button scrape-button">Initiate Super Creepy Arachnids!</button>
+                    <button class="action-button scrape-button">RUN SUPER CREEPY STEALTHY ARACHNIDS </button>
                 </form>
                 <form action="/clear" method="post" style="display: inline-block;">
-                    <button class="action-button clear-button">Clear Data</button>
+                    <button class="action-button clear-button">CLEAR DATA</button>
                 </form>
             </div>
             <div class="filter-form">
@@ -124,12 +128,19 @@ def index():
             </div>
         </div>
         <table>
-            <tr><th>Name</th><th>Date</th><th>Venue</th><th>Address</th><th>Source</th></tr>
+            <tr><th>Name</th><th>Date / Season</th><th>Venue</th><th>Address</th><th>Source</th></tr>
             {% for event in events %}
             <tr>
                 <td><a href="{{ event.url }}" target="_blank">{{ event.name }}</a></td>
-                <!-- APPLY THE NEW 'format_date' FILTER HERE -->
-                <td>{{ event.event_date | format_date }}</td>
+                <td>
+                    {% if event.event_date %}
+                        {{ event.event_date | format_date }}
+                    {% elif event.season %}
+                        {{ event.season }}
+                    {% else %}
+                        N/A
+                    {% endif %}
+                </td>
                 <td>{{ event.venue_name }}</td>
                 <td>{{ event.venue_address }}</td>
                 <td>{{ event.source }}</td>
@@ -156,6 +167,7 @@ def index():
     """
     return render_template_string(html, events=events, page=page, total_pages=total_pages, sources=sources, selected_source=selected_source)
 
+
 @app.route('/clear', methods=['POST'])
 def clear_data():
     if os.path.exists(DB_FILE):
@@ -165,18 +177,21 @@ def clear_data():
         conn.commit()
         conn.close()
     return redirect(url_for('index'))
+
+
 @app.route('/scrape', methods=['POST'])
 def scrape():
     runner_script = os.path.join(os.path.dirname(__file__), 'runner.py')
     python_executable = sys.executable
+    print("--- LAUNCHING SUPER CREEPY STEALTHY ARACHNIDS IN BACKGROUND! ---")
     try:
-        subprocess.run([python_executable, runner_script],
-                       check=True, capture_output=True, text=True)
-    except subprocess.CalledProcessError as e:
-        print("--- RUNNER SCRIPT FAILED ---")
-        print("STDOUT:", e.stdout)
-        print("STDERR:", e.stderr)
+        subprocess.Popen([python_executable, runner_script])
+        print("--- TASK LAUNCHED. UI WILL NOT WAIT. GO GET SOME BYTES AND RECHARGE!!! ---")
+    except Exception as e:
+        print(f"--- FAILED TO LAUNCH SCRAPE PROCESS: {e} ---")
     return redirect(url_for('index'))
+
+
 if __name__ == "__main__":
     init_db()
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=8000, debug=True)

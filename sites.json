@@ -33,7 +33,7 @@
         "start_url": "https://tunehatch.com/e/upcomingShows/12778804/darkMode=true",
         "item_container_selector": ".flyerCardContainer",
         "fields": {
-            "name": "css:h1.text-2xl.font-black::text",
+            "name": "css:.flyerCardContainer h1::text",
             "url": "css:a::attr(href)",
             "event_date": "css:h2::text"
         },
@@ -46,4 +46,3 @@
         }
     }
 }
-
