@@ -1,8 +1,9 @@
-scrapy
-python-dotenv
-psycopg2-binary
-boto3
 Flask
+Scrapy
 scrapy-playwright
-playwright
+scrapy-playwright-stealth
+python-dotenv
 pytz
+celery
+redis
+psycopg2-binary

@@ -1,11 +1,10 @@
 import os
 import sqlite3
 import sys
+import subprocess
 from dotenv import load_dotenv
-from scrapy.crawler import CrawlerProcess
-from scrapy.utils.project import get_project_settings
 
-sys.path.append(os.path.join(os.path.dirname(__file__), "scraper"))
+load_dotenv()
 DB_FILE = "scraped_data.db"
 
 def init_db():
@@ -13,24 +12,15 @@ def init_db():
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT,
-            url TEXT UNIQUE,
-            event_date TEXT,
-            venue_name TEXT,
-            venue_address TEXT,
-            description TEXT,
-            source TEXT,
-            category TEXT,
-            genre TEXT,
-            season TEXT
+            id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, url TEXT UNIQUE, event_date TEXT,
+            venue_name TEXT, venue_address TEXT, description TEXT, source TEXT,
+            category TEXT, genre TEXT, season TEXT, latitude REAL, longitude REAL
         )
     ''')
     conn.commit()
     conn.close()
 
 def run_all_spiders():
-    load_dotenv()
     init_db()
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -38,19 +28,37 @@ def run_all_spiders():
     conn.commit()
     conn.close()
     
-    os.environ['SCRAPY_SETTINGS_MODULE'] = 'scraper.nashville.settings'
-    settings = get_project_settings()
-    settings.set('ITEM_PIPELINES', {'scraper.nashville.pipelines.SQLitePipeline': 1})
+    scrapy_executable = "scrapy"
+    project_dir = os.path.join(os.path.dirname(__file__), 'scraper')
     
-    process = CrawlerProcess(settings)
-    all_spider_names = process.spider_loader.list()
-    print(f"Found spiders: {', '.join(all_spider_names)}")
-    
-    for spider_name in all_spider_names:
-        print(f"Queuing spider: {spider_name}")
-        process.crawl(spider_name)
-        
-    process.start()
+    env = os.environ.copy()
+    env['PYTHONPATH'] = os.path.dirname(__file__)
+
+    try:
+        result = subprocess.run(
+            [scrapy_executable, "list"],
+            cwd=project_dir, capture_output=True, text=True, check=True, env=env
+        )
+        spider_names = result.stdout.strip().split('\n')
+        print(f"Found spiders: {spider_names}")
+    except subprocess.CalledProcessError as e:
+        print("--- Could not find spiders. The 'scrapy list' command failed. ---")
+        print(f"--- STDERR from scrapy list: {e.stderr} ---")
+        return
+    except Exception as e:
+        print(f"An unexpected error occurred while trying to list spiders: {e}")
+        return
+
+    for spider_name in spider_names:
+        print(f"--- Running spider: {spider_name} ---")
+        try:
+            subprocess.run(
+                [scrapy_executable, "crawl", spider_name],
+                cwd=project_dir, check=True, env=env
+            )
+        except Exception as e:
+            print(f"--- Spider '{spider_name}' failed with an error: {e} ---")
+            
     print("--- All spiders finished ---")
 
 if __name__ == '__main__':

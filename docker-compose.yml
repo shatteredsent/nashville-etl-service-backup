@@ -1,7 +1,4 @@
-version: '3.8'
-
 services:
-  # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
     container_name: nashville-postgres
@@ -13,16 +10,22 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    # - ./__init__.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U nashville_user" ]
+      test: [ "CMD-SHELL", "pg_isready -U nashville_user -d nashville_tourism" ]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - nashville-network
 
-  # ETL Service (Scrapers + API)
+  redis:
+    image: redis:alpine
+    container_name: nashville-redis
+    networks:
+      - nashville-network
+    restart: unless-stopped
+
   app:
     build: .
     container_name: nashville-etl-app
@@ -38,14 +41,38 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_started
     volumes:
-      - ./scraper:/app/scraper
-      - ./scraped_data.db:/app/scraped_data.db
+      - .:/app
     networks:
       - nashville-network
     restart: unless-stopped
 
-  # pgAdmin for database management (optional)
+  worker:
+    build: .
+    container_name: nashville-worker
+    command: celery -A tasks worker --loglevel=info
+    ports:
+      - "6023:6023"
+    environment:
+      - DATABASE_URL=postgresql://nashville_user:nashville_pass@postgres:5432/nashville_tourism
+      - TICKETMASTER_API_KEY=${TICKETMASTER_API_KEY}
+      - SEATGEEK_CLIENT_ID=${SEATGEEK_CLIENT_ID}
+      - YELP_API_KEY=${YELP_API_KEY}
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - .:/app
+    networks:
+      - nashville-network
+    restart: unless-stopped
+  
   pgadmin:
     image: dpage/pgadmin4
     container_name: nashville-pgadmin
@@ -62,7 +89,6 @@ services:
 
 volumes:
   postgres_data:
-
 
 networks:
   nashville-network:

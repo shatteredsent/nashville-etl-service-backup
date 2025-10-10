@@ -3,6 +3,7 @@ import json
 import os
 from scrapy_playwright.page import PageMethod
 from scraper.nashville.items import BusinessItem
+
 class GenericSpider(scrapy.Spider):
     name = 'generic'
     def start_requests(self):
@@ -11,23 +12,24 @@ class GenericSpider(scrapy.Spider):
             sites_config = json.load(f)
         for source, config in sites_config.items():
             meta = {'config': config, 'source': source}
-            wait_selector = config.get('item_container_selector') or config.get('item_anchor_selector')            
+            wait_selector = config.get('item_container_selector') or config.get('item_anchor_selector')
             if config.get('uses_playwright', False):
-                meta['playwright'] = True                
+                meta['playwright'] = True
                 methods = []
                 if wait_selector:
                     if wait_selector.startswith('xpath:'):
                         wait_selector = wait_selector.replace('xpath:', '')
-                    methods.append(PageMethod('wait_for_selector', wait_selector))                
+                    methods.append(PageMethod('wait_for_selector', wait_selector))
                 wait_time = config.get('wait_after_load')
                 if wait_time:
                     methods.append(PageMethod('wait_for_timeout', wait_time))
                 if methods:
                     meta['playwright_page_methods'] = methods
-            yield scrapy.Request(url=config['start_url'], callback=self.parse, meta=meta)            
+            yield scrapy.Request(url=config['start_url'], callback=self.parse, meta=meta)
+            
     def parse(self, response):
         config = response.meta['config']
-        source = response.meta['source']        
+        source = response.meta['source']
         item_elements = []
         container_selector = config.get('item_container_selector')
         anchor_selector = config.get('item_anchor_selector')
@@ -68,7 +70,7 @@ class GenericSpider(scrapy.Spider):
                 yield item
     def parse_details(self, response):
         item = BusinessItem(response.meta['item'])
-        config = response.meta['config']        
+        config = response.meta['config']
         for field, css_selector in config.get('detail_page_fields', {}).items():
             data = self._extract_data(response, css_selector)
             item[field] = data.strip() if data else None
@@ -86,4 +88,3 @@ class GenericSpider(scrapy.Spider):
             return ' '.join(part.strip() for part in raw_data if part.strip())
         else:
             return method(clean_selector).get()
-

@@ -1,8 +1,9 @@
 import scrapy
 import os
 from urllib.parse import urlencode
-from nashville.items import BusinessItem
+from scraper.nashville.items import BusinessItem
 from datetime import datetime, timezone
+
 class TicketmasterSpider(scrapy.Spider):
     name = 'ticketmaster'
     base_url = 'https://app.ticketmaster.com/discovery/v2/events.json'
