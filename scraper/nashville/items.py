@@ -24,3 +24,5 @@ class BusinessItem(scrapy.Item):
     category = scrapy.Field()
     genre = scrapy.Field()
     season = scrapy.Field()
+    latitude = scrapy.Field()
+    longitude = scrapy.Field()
