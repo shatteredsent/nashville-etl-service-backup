@@ -1,0 +1,10 @@
+Flask
+Scrapy
+scrapy-playwright
+scrapy-playwright-stealth
+python-dotenv
+pytz
+celery
+redis
+psycopg2-binary
+pyproj==3.7.0

@@ -1,0 +1,113 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: nashville-postgres
+    environment:
+      POSTGRES_DB: nashville_tourism
+      POSTGRES_USER: nashville_user
+      POSTGRES_PASSWORD: nashville_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nashville_user -d nashville_tourism"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nashville-network
+  redis:
+    image: redis:alpine
+    container_name: nashville-redis
+    networks:
+      - nashville-network
+    restart: unless-stopped
+  app:
+    build: .
+    container_name: nashville-etl-app
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://nashville_user:nashville_pass@postgres:5432/nashville_tourism
+      - TICKETMASTER_API_KEY=${TICKETMASTER_API_KEY}
+      - SEATGEEK_CLIENT_ID=${SEATGEEK_CLIENT_ID}
+      - YELP_API_KEY=${YELP_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - .:/app
+    networks:
+      - nashville-network
+    restart: unless-stopped
+  worker:
+    build: .
+    container_name: nashville-worker
+    command: celery -A tasks worker --loglevel=info
+    ports:
+      - "6023:6023"
+    environment:
+      - DATABASE_URL=postgresql://nashville_user:nashville_pass@postgres:5432/nashville_tourism
+      - TICKETMASTER_API_KEY=${TICKETMASTER_API_KEY}
+      - SEATGEEK_CLIENT_ID=${SEATGEEK_CLIENT_ID}
+      - YELP_API_KEY=${YELP_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - .:/app
+    networks:
+      - nashville-network
+    restart: unless-stopped
+  scheduler:
+    build: .
+    container_name: nashville-scheduler
+    command: celery -A tasks beat -l info
+    environment:
+      - DATABASE_URL=postgresql://nashville_user:nashville_pass@postgres:5432/nashville_tourism
+      - TICKETMASTER_API_KEY=${TICKETMASTER_API_KEY}
+      - SEATGEEK_CLIENT_ID=${SEATGEEK_CLIENT_ID}
+      - YELP_API_KEY=${YELP_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - .:/app
+    networks:
+      - nashville-network
+    restart: unless-stopped
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: nashville-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@nashville.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - nashville-network
+    restart: unless-stopped
+volumes:
+  postgres_data:
+networks:
+  nashville-network:
+    driver: bridge
