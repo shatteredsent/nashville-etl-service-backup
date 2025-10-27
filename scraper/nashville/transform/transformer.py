@@ -14,13 +14,19 @@ def transform_event(raw_event: Dict) -> Dict:
         )
     if 'price' in transformed:
         transformed['price'] = standardize_price(transformed['price'])
-    category, genre = categorize_event(
-        transformed.get('name', ''),
-        transformed.get('description', ''),
-        transformed.get('venue_name', '')
-    )
-    transformed['category'] = category
-    transformed['genre'] = genre
+    trusted_sources = {'Nashville ArcGIS', 'Yelp', 'Google Places'}
+    
+    if transformed.get('source') in trusted_sources and transformed.get('category') != 'General':
+        pass
+    else:
+        category, genre = categorize_event(
+            transformed.get('name', ''),
+            transformed.get('description', ''),
+            transformed.get('venue_name', '')
+        )
+        transformed['category'] = category
+        transformed['genre'] = genre
+        
     return transformed
 def transform_events(raw_events: List[Dict]) -> List[Dict]:
     return [transform_event(event) for event in raw_events]

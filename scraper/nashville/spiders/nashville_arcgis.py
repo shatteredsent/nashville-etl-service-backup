@@ -4,8 +4,6 @@ from typing import Optional, Tuple, Dict, Any
 from pyproj import Transformer
 from scraper.nashville.items import BusinessItem
 import os
-
-
 class NashvilleArcGISSpider(scrapy.Spider):
     name = 'nashville_arcgis'
     allowed_domains = ['services2.arcgis.com']
@@ -25,20 +23,19 @@ class NashvilleArcGISSpider(scrapy.Spider):
     DATASETS = [
         {'name': 'Parks', 'url': 'https://services2.arcgis.com/HdTo6HJqh92wn4D8/arcgis/rest/services/Parks_Facilities/FeatureServer/1', 'category': 'park', 'name_field': 'FacilityName',
             'address_field': 'Address', 'extra_fields': ['FacilityType', 'Description', 'PhoneNumber', 'Website'], 'where': "FacilityType IS NOT NULL AND Address IS NOT NULL", 'enabled': True},
-        {'name': 'Libraries', 'url': 'https://services2.arcgis.com/HdTo6HJqh92wn4D8/arcgis/rest/services/Library_Facilities/FeatureServer/0', 'category': 'public_facility', 'name_field': 'FacilityName',
+        {'name': 'Libraries', 'url': 'https://services2.arcgis.com/HdTo6HJqh92wn4D8/arcgis/rest/services/Library_Facilities/FeatureServer/0', 'category': 'library', 'name_field': 'FacilityName',
             'address_field': 'Address', 'extra_fields': ['PhoneNumber', 'MondayOpen', 'MondayClose'], 'where': "FacilityName IS NOT NULL AND Address IS NOT NULL", 'enabled': True},
-        {'name': 'Fire Stations', 'url': 'https://services2.arcgis.com/HdTo6HJqh92wn4D8/arcgis/rest/services/Fire_Station_Locations/FeatureServer/0', 'category': 'public_facility',
+        {'name': 'Fire Stations', 'url': 'https://services2.arcgis.com/HdTo6HJqh92wn4D8/arcgis/rest/services/Fire_Station_Locations/FeatureServer/0', 'category': 'fire_station',
             'name_field': 'FacilityName', 'address_field': 'Address', 'extra_fields': [], 'where': "FacilityName IS NOT NULL AND Address IS NOT NULL", 'enabled': True},
-        {'name': 'Police Precincts', 'url': 'https://services2.arcgis.com/HdTo6HJqh92wn4D8/arcgis/rest/services/Police_Precincts_view/FeatureServer/0', 'category': 'public_facility',
+        {'name': 'Police Precincts', 'url': 'https://services2.arcgis.com/HdTo6HJqh92wn4D8/arcgis/rest/services/Police_Precincts_view/FeatureServer/0', 'category': 'police',
             'name_field': 'FacilityName', 'address_field': 'Address', 'extra_fields': ['CommanderName', 'PhoneNumber', 'Website'], 'where': "FacilityName IS NOT NULL AND Address IS NOT NULL", 'enabled': True},
-        {'name': 'Public Health Clinics', 'url': 'https://services2.arcgis.com/HdTo6HJqh92wn4D8/arcgis/rest/services/Public_Health_Clinics_view/FeatureServer/0', 'category': 'public_facility',
+        {'name': 'Public Health Clinics', 'url': 'https://services2.arcgis.com/HdTo6HJqh92wn4D8/arcgis/rest/services/Public_Health_Clinics_view/FeatureServer/0', 'category': 'health_clinic',
             'name_field': 'ClinicName', 'address_field': 'Address', 'extra_fields': ['Phone', 'Hours'], 'where': "ClinicName IS NOT NULL AND Address IS NOT NULL", 'enabled': True},
-        {'name': 'Public Artwork', 'url': 'https://services2.arcgis.com/HdTo6HJqh92wn4D8/arcgis/rest/services/Metro_Arts_Public_Artwork_view/FeatureServer/0', 'category': 'point_of_interest',
+        {'name': 'Public Artwork', 'url': 'https://services2.arcgis.com/HdTo6HJqh92wn4D8/arcgis/rest/services/Metro_Arts_Public_Artwork_view/FeatureServer/0', 'category': 'art_culture',
             'name_field': 'ArtworkName', 'address_field': 'Location', 'extra_fields': ['FirstName', 'LastName', 'Medium', 'WebLink'], 'where': "ArtworkName IS NOT NULL", 'enabled': True},
-        {'name': 'Cemetery Survey', 'url': 'https://services2.arcgis.com/HdTo6HJqh92wn4D8/arcgis/rest/services/Davidson_County_Cemetery_Survey_Table_view/FeatureServer/0', 'category': 'point_of_interest',
+        {'name': 'Cemetery Survey', 'url': 'https://services2.arcgis.com/HdTo6HJqh92wn4D8/arcgis/rest/services/Davidson_County_Cemetery_Survey_Table_view/FeatureServer/0', 'category': 'historic_site',
             'name_field': 'Cemetery_Name', 'address_field': 'Street', 'extra_fields': ['Graveyard_Type', 'Known_Burials', 'Map_ID'], 'where': "Cemetery_Name IS NOT NULL", 'enabled': False},
     ]
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.stats_counter = {'total': 0, 'yielded': 0,
@@ -51,7 +48,6 @@ class NashvilleArcGISSpider(scrapy.Spider):
             raise
         self.logger.info(
             f"Initialized with {sum(1 for d in self.DATASETS if d.get('enabled', True))}/{len(self.DATASETS)} enabled datasets")
-
     def start_requests(self):
         for dataset in self.DATASETS:
             if not dataset.get('enabled', True):
@@ -60,10 +56,24 @@ class NashvilleArcGISSpider(scrapy.Spider):
             self.logger.info(
                 f"Starting: {dataset['name']} ({dataset['category']})")
             yield self._create_request(dataset, 0)
-
     def _create_request(self, dataset: Dict[str, Any], offset: int):
-        return FormRequest(url=f"{dataset['url']}/query", formdata={'where': dataset.get('where', '1=1'), 'outFields': ','.join([dataset['name_field'], dataset['address_field']] + dataset['extra_fields']), 'returnGeometry': 'true', 'f': 'json', 'resultOffset': str(offset), 'resultRecordCount': str(self.RECORDS_PER_REQUEST)}, callback=self.parse, meta={'dataset': dataset, 'offset': offset}, errback=self.handle_error, dont_filter=True)
-
+        out_fields = ','.join([dataset['name_field'], dataset['address_field']] + dataset['extra_fields'])
+        form_data = {
+            'where': dataset.get('where', '1=1'), 
+            'outFields': out_fields, 
+            'returnGeometry': 'true', 
+            'f': 'json', 
+            'resultOffset': str(offset), 
+            'resultRecordCount': str(self.RECORDS_PER_REQUEST)
+        }
+        return FormRequest(
+            url=f"{dataset['url']}/query", 
+            formdata=form_data, 
+            callback=self.parse, 
+            meta={'dataset': dataset, 'offset': offset}, 
+            errback=self.handle_error, 
+            dont_filter=True
+        )
     def parse(self, response):
         dataset, offset = response.meta['dataset'], response.meta['offset']
         try:
@@ -91,7 +101,6 @@ class NashvilleArcGISSpider(scrapy.Spider):
             f"Yielded {items_yielded}/{len(features)} from {dataset['name']}")
         if len(features) >= self.RECORDS_PER_REQUEST:
             yield self._create_request(dataset, offset + self.RECORDS_PER_REQUEST)
-
     def _parse_feature(self, feature: Dict[str, Any], dataset: Dict[str, Any]) -> Optional[BusinessItem]:
         if 'attributes' not in feature or 'geometry' not in feature:
             self.logger.warning(
@@ -106,20 +115,27 @@ class NashvilleArcGISSpider(scrapy.Spider):
             self.stats_counter['no_coords'] += 1
             self.logger.warning(f"Skipping {name} - no valid coordinates")
             return None
-        return BusinessItem(source='nashville_arcgis', category=dataset['category'], venue_city='Nashville', name=name, venue_address=self._get_address(attrs, dataset), longitude=lng, latitude=lat, description=self._build_description(attrs, dataset), url=f"https://www.google.com/maps/search/?api=1&query={lat},{lng}")
-
+        return BusinessItem(
+            source='nashville_arcgis', 
+            category=dataset['category'],
+            venue_city='Nashville', 
+            name=name, 
+            venue_address=self._get_address(attrs, dataset), 
+            longitude=lng, 
+            latitude=lat, 
+            description=self._build_description(attrs, dataset), 
+            url=f"https://www.google.com/maps/search/?api=1&query={lat},{lng}"
+        )
     def _get_valid_name(self, name: Any) -> Optional[str]:
         if not name:
             return None
         name_str = str(name).strip()
         return name_str if name_str.lower() not in self.INVALID_STRINGS and len(name_str) >= 2 else None
-
     def _get_address(self, attrs: Dict[str, Any], dataset: Dict[str, Any]) -> Optional[str]:
         if not (address := attrs.get(dataset['address_field'])):
             return None
         address = str(address).strip()
         return address if address.lower() not in self.INVALID_STRINGS else None
-
     def _extract_coords(self, geom: Dict[str, Any]) -> Tuple[Optional[float], Optional[float]]:
         try:
             if 'x' in geom and 'y' in geom:
@@ -149,7 +165,6 @@ class NashvilleArcGISSpider(scrapy.Spider):
         except Exception as e:
             self.logger.debug(f"Transform failed: {e}")
         return None, None
-
     def _build_description(self, attrs: Dict[str, Any], dataset: Dict[str, Any]) -> str:
         parts = [dataset['name']]
         for field in dataset['extra_fields']:
@@ -158,12 +173,10 @@ class NashvilleArcGISSpider(scrapy.Spider):
                 parts.append(
                     f"{field}: {value_str[:100]}{'...' if len(value_str) > 100 else ''}")
         return ' | '.join(parts)
-
     def handle_error(self, failure):
         dataset = failure.request.meta.get('dataset', {})
         self.logger.error(
             f"Request failed for {dataset.get('name', 'Unknown')}: {failure.value}")
-
     def closed(self, reason):
         self.logger.info(f"Spider closed: {reason}")
         self.logger.info(f"Stats: {self.stats_counter}")
