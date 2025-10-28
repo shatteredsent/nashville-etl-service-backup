@@ -8,3 +8,4 @@ celery
 redis
 psycopg2-binary
 pyproj==3.7.0
+pymupdf

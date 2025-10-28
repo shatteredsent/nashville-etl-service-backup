@@ -1,11 +1,23 @@
 import sys
-from flask import Flask, render_template_string, redirect, url_for, request
+import os
+import subprocess
+from flask import Flask, render_template_string, redirect, url_for, request, flash
 from datetime import datetime
+from werkzeug.utils import secure_filename
 from tasks import scrape_and_transform_chain
 from db_extractor import PostgresExtractor
+
 app = Flask(__name__)
+app.secret_key = os.environ.get(
+    'SECRET_KEY', 'dev-secret-key-change-in-production')
 PER_PAGE = 25
 db_manager = PostgresExtractor()
+
+UPLOAD_FOLDER = '/tmp/pdf_uploads'
+ALLOWED_EXTENSIONS = {'pdf'}
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+
 def format_date_filter(iso_date_str):
     if not iso_date_str:
         return ""
@@ -14,6 +26,8 @@ def format_date_filter(iso_date_str):
         return dt_object.strftime('%b %d, %Y at %I:%M %p')
     except (ValueError, TypeError):
         return iso_date_str
+
+
 def get_pagination_range(current_page, total_pages, max_visible=5):
     if total_pages <= max_visible + 2:
         return {
@@ -47,17 +61,25 @@ def get_pagination_range(current_page, total_pages, max_visible=5):
             'show_right_ellipsis': True,
             'pages': [current_page - 1, current_page, current_page + 1]
         }
+
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
 app.jinja_env.filters['format_date'] = format_date_filter
+
+
 @app.route('/')
 def index():
     page = request.args.get('page', 1, type=int)
     selected_source = request.args.get('source', '')
     selected_category = request.args.get('category', '')
     search_term = request.args.get('search', '').strip()
-    
+
     events, sources, categories, total_pages, total_events = db_manager.fetch_paginated_data(
         page, selected_source, selected_category, search_term
-    )    
+    )
     pagination = get_pagination_range(page, total_pages)
     current_filters = {
         'source': selected_source,
@@ -84,6 +106,7 @@ def index():
         .filter-group select, .filter-group input[type="text"], .filter-group button { padding: 8px; font-size: 16px; border: 1px solid #ccc; border-radius: 4px; }
         .action-button { background-color: #008CBA; color: white; padding: 10px 24px; text-align: center; font-size: 16px; cursor: pointer; border: none; margin-right: 10px; border-radius: 4px;}
         .clear-button { background-color: #f44336; }
+        .upload-button { background-color: #9C27B0; }
         .pagination { margin-top: 10px; display: flex; gap: 5px; align-items: center; }
         .pagination a, .pagination span {
             color: black;
@@ -106,10 +129,58 @@ def index():
             background: none;
             padding: 8px 4px;
         }
+        .upload-form {
+            display: inline-block;
+            margin-right: 10px;
+        }
+        .upload-form input[type="file"] {
+            display: none;
+        }
+        .upload-label {
+            background-color: #9C27B0;
+            color: white;
+            padding: 10px 24px;
+            text-align: center;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            display: inline-block;
+        }
+        .upload-label:hover {
+            background-color: #7B1FA2;
+        }
+        .flash-messages {
+            margin-bottom: 20px;
+        }
+        .flash-message {
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+        }
+        .flash-success {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .flash-error {
+            background-color: #f44336;
+            color: white;
+        }
     </style>
 </head>
 <body>
     <h1>Nashville ETL Dashboard (Pre-Scheduled Data)</h1>
+    
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="flash-messages">
+                {% for category, message in messages %}
+                    <div class="flash-message flash-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+    
     <div class="controls-container">
         <form action="{{ url_for('index') }}" method="get" class="filter-group">            
             <select name="source">
@@ -127,12 +198,30 @@ def index():
             <button type="submit" class="action-button">Filter/Search</button>
             <a href="{{ url_for('index') }}" class="action-button clear-button" style="text-decoration: none;">Reset Filters</a>
         </form>
-        <form action="/clear" method="post" style="display: inline-block;">
-            <button class="action-button clear-button">CLEAR ALL DATA</button>
-        </form>
-        <form action="/launch_manual_scrape" method="post" style="display: inline-block;">
-            <button class="action-button" style="background-color: green;">Manual Run</button>
-        </form>
+        
+        <div style="display: flex; gap: 10px;">
+            <form action="/upload_pdf" method="post" enctype="multipart/form-data" id="upload-form" class="upload-form">
+                <input type="file" id="pdf-upload" name="pdf_file" accept=".pdf" style="display: none;">
+                <label for="pdf-upload" class="upload-label">Upload Document</label>
+            </form>
+            <script>
+                let isSubmitting = false;
+                document.getElementById('pdf-upload').addEventListener('change', function() {
+                    if (this.files.length > 0 && !isSubmitting) {
+                        isSubmitting = true;
+                        console.log('Submitting PDF:', this.files[0].name);
+                        document.getElementById('upload-form').submit();
+                    }
+                });
+            </script>
+            
+            <form action="/clear" method="post" style="display: inline-block;">
+                <button class="action-button clear-button">CLEAR ALL DATA</button>
+            </form>
+            <form action="/launch_manual_scrape" method="post" style="display: inline-block;">
+                <button class="action-button" style="background-color: green;">Manual Run</button>
+            </form>
+        </div>
     </div>
     {% if total_events == 0 %}
         <p>No events found matching your criteria. Data refreshes automatically every 3 hours.</p>
@@ -201,6 +290,132 @@ def index():
         search_term=search_term,
         total_events=total_events
     )
+
+
+@app.route('/upload_pdf', methods=['POST'])
+def upload_pdf():
+    if 'pdf_file' not in request.files:
+        flash('No file selected', 'error')
+        return redirect(url_for('index'))
+
+    file = request.files['pdf_file']
+
+    if file.filename == '':
+        flash('No file selected', 'error')
+        return redirect(url_for('index'))
+
+    if not allowed_file(file.filename):
+        flash('Invalid file type. Please upload a PDF file.', 'error')
+        return redirect(url_for('index'))
+
+    filepath = None
+    try:
+        filename = secure_filename(file.filename)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        unique_filename = f"{timestamp}_{filename}"
+        filepath = os.path.join(UPLOAD_FOLDER, unique_filename)
+
+        # Save file
+        file.save(filepath)
+        print(f"PDF saved to: {filepath}", file=sys.stderr)
+
+        # Run spider
+        result = run_pdf_spider(filepath)
+
+        if result:
+            # Run transformation immediately
+            print("Running transformation after PDF upload...", file=sys.stderr)
+            transform_result = run_transformation()
+
+            if transform_result:
+                flash(
+                    'PDF processed and transformed successfully! Check the dashboard.', 'success')
+            else:
+                flash(
+                    'PDF processed but transformation failed. Run Manual Run to complete.', 'error')
+        else:
+            flash('PDF processed but no data extracted. Check file format.', 'error')
+
+    except Exception as e:
+        flash(f'Error processing PDF: {str(e)}', 'error')
+        print(f"PDF processing error: {e}", file=sys.stderr)
+    finally:
+        # Clean up file
+        if filepath and os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+                print(f"Cleaned up temp file: {filepath}", file=sys.stderr)
+            except Exception as e:
+                print(f"Error removing temp file: {e}", file=sys.stderr)
+
+    return redirect(url_for('index'))
+
+
+def run_pdf_spider(pdf_path):
+    """Run PDF spider as subprocess"""
+    try:
+        project_dir = '/app/scraper'
+        env = os.environ.copy()
+        env['PYTHONPATH'] = '/app'
+
+        print(f"Starting PDF spider for: {pdf_path}", file=sys.stderr)
+
+        result = subprocess.run(
+            ['scrapy', 'crawl', 'pdf', '-a', f'pdf_path={pdf_path}'],
+            cwd=project_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+
+        if result.returncode != 0:
+            print(f"PDF spider stderr: {result.stderr}", file=sys.stderr)
+            return False
+
+        print(f"PDF spider stdout: {result.stdout}", file=sys.stderr)
+        print("PDF spider completed successfully", file=sys.stderr)
+        return True
+
+    except subprocess.TimeoutExpired:
+        print("PDF spider timeout", file=sys.stderr)
+        return False
+    except Exception as e:
+        print(f"PDF spider subprocess error: {e}", file=sys.stderr)
+        return False
+
+
+def run_transformation():
+    """Run transformation on raw_data"""
+    try:
+        env = os.environ.copy()
+        env['PYTHONPATH'] = '/app'
+
+        print("Starting transformation...", file=sys.stderr)
+
+        result = subprocess.run(
+            ['python', '/app/transform_data.py'],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+
+        if result.returncode != 0:
+            print(f"Transformation error: {result.stderr}", file=sys.stderr)
+            return False
+
+        print(f"Transformation output: {result.stdout}", file=sys.stderr)
+        return True
+
+    except subprocess.TimeoutExpired:
+        print("Transformation timeout", file=sys.stderr)
+        return False
+    except Exception as e:
+        print(f"Transformation error: {e}", file=sys.stderr)
+        return False
+
+
 @app.route('/clear', methods=['POST'])
 def clear_data():
     conn = db_manager._get_connection()
@@ -217,11 +432,15 @@ def clear_data():
         cursor.close()
         conn.close()
     return redirect(url_for('index'))
+
+
 @app.route('/launch_manual_scrape', methods=['POST'])
 def launch_manual_scrape():
     clear_data()
     print("Dispatching ETL chain to Celery worker.")
     scrape_and_transform_chain.delay()
     return redirect(url_for('index'))
+
+
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=8000, debug=True)
