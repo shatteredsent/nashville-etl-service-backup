@@ -1,20 +1,11 @@
-import os
-import psycopg2
-import subprocess
 import sys
 from flask import Flask, render_template_string, redirect, url_for, request
 from datetime import datetime
-from urllib.parse import urlencode
-from celery import chain
 from tasks import scrape_and_transform_chain
+from db_extractor import PostgresExtractor
 app = Flask(__name__)
 PER_PAGE = 25
-
-
-def get_db_connection():
-    return psycopg2.connect(os.environ['DATABASE_URL'])
-
-
+db_manager = PostgresExtractor()
 def format_date_filter(iso_date_str):
     if not iso_date_str:
         return ""
@@ -23,10 +14,7 @@ def format_date_filter(iso_date_str):
         return dt_object.strftime('%b %d, %Y at %I:%M %p')
     except (ValueError, TypeError):
         return iso_date_str
-
-
 def get_pagination_range(current_page, total_pages, max_visible=5):
-    """Calculate smart pagination range"""
     if total_pages <= max_visible + 2:
         return {
             'show_first': False,
@@ -35,7 +23,6 @@ def get_pagination_range(current_page, total_pages, max_visible=5):
             'show_right_ellipsis': False,
             'pages': list(range(1, total_pages + 1))
         }
-
     if current_page <= 3:
         return {
             'show_first': False,
@@ -60,78 +47,23 @@ def get_pagination_range(current_page, total_pages, max_visible=5):
             'show_right_ellipsis': True,
             'pages': [current_page - 1, current_page, current_page + 1]
         }
-
-
 app.jinja_env.filters['format_date'] = format_date_filter
-
-
 @app.route('/')
 def index():
     page = request.args.get('page', 1, type=int)
     selected_source = request.args.get('source', '')
     selected_category = request.args.get('category', '')
     search_term = request.args.get('search', '').strip()
-    offset = (page - 1) * PER_PAGE
-    conn = None
-    cursor = None
-    events, sources, categories, total_pages, total_events = [], [], [], 0, 0
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT to_regclass('public.events');")
-        table_exists = cursor.fetchone()[0]
-        conn.rollback()
-        if not table_exists:
-            pass
-        else:
-            cursor.execute(
-                "SELECT DISTINCT source FROM events WHERE source IS NOT NULL ORDER BY source")
-            sources = [row[0] for row in cursor.fetchall()]
-            cursor.execute(
-                "SELECT DISTINCT category FROM events WHERE category IS NOT NULL ORDER BY category")
-            categories = [row[0] for row in cursor.fetchall()]
-            conditions = []
-            params = []
-            if selected_source:
-                conditions.append("source=%s")
-                params.append(selected_source)
-            if selected_category:
-                conditions.append("category=%s")
-                params.append(selected_category)
-            if search_term:
-                conditions.append(
-                    "search_vector @@ plainto_tsquery('english',%s)")
-                params.append(search_term)
-            where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-            count_query = f"SELECT COUNT(*) FROM events {where_clause}"
-            cursor.execute(count_query, tuple(params))
-            total_events = cursor.fetchone()[0]
-            total_pages = (total_events + PER_PAGE - 1) // PER_PAGE
-            order_clause = "ORDER BY ts_rank(search_vector,plainto_tsquery('english',%s)) DESC" if search_term else "ORDER BY event_date ASC, name ASC"
-            final_query = f"SELECT * FROM events {where_clause} {order_clause} LIMIT %s OFFSET %s"
-            final_params = list(params)
-            if search_term:
-                final_params.append(search_term)
-            final_params.extend([PER_PAGE, offset])
-            cursor.execute(final_query, tuple(final_params))
-            colnames = [desc[0] for desc in cursor.description]
-            events = [dict(zip(colnames, row)) for row in cursor.fetchall()]
-    except Exception as e:
-        print(
-            f"Error querying events,sources,categories: {e}", file=sys.stderr)
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-    # Get pagination info
+    
+    events, sources, categories, total_pages, total_events = db_manager.fetch_paginated_data(
+        page, selected_source, selected_category, search_term
+    )    
     pagination = get_pagination_range(page, total_pages)
     current_filters = {
         'source': selected_source,
         'category': selected_category,
         'search': search_term
     }
-
     html = """
 <!DOCTYPE html>
 <html>
@@ -217,49 +149,34 @@ def index():
                 <td>{{ event.source }}</td>
             </tr>
             {% endfor %}
-        </table>
-        
+        </table>        
         {% if total_pages > 1 %}
         <div class="pagination">
-            {% set page_args = {'source': selected_source, 'category': selected_category, 'search': search_term} %}
-            
-            <!-- Back Button -->
+            {% set page_args = {'source': selected_source, 'category': selected_category, 'search': search_term} %}            
             {% if page > 1 %}
                 <a href="{{ url_for('index', page=page-1, **page_args) }}">&laquo; Back</a>
             {% else %}
                 <span class="disabled">&laquo; Back</span>
-            {% endif %}
-            
-            <!-- First Page -->
+            {% endif %}            
             {% if pagination.show_first %}
                 <a href="{{ url_for('index', page=1, **page_args) }}">1</a>
-            {% endif %}
-            
-            <!-- Left Ellipsis -->
+            {% endif %}            
             {% if pagination.show_left_ellipsis %}
                 <span class="ellipsis">...</span>
-            {% endif %}
-            
-            <!-- Page Numbers -->
+            {% endif %}            
             {% for p in pagination.pages %}
                 {% if p == page %}
                     <a href="#" class="active">{{ p }}</a>
                 {% else %}
                     <a href="{{ url_for('index', page=p, **page_args) }}">{{ p }}</a>
                 {% endif %}
-            {% endfor %}
-            
-            <!-- Right Ellipsis -->
+            {% endfor %}            
             {% if pagination.show_right_ellipsis %}
                 <span class="ellipsis">...</span>
-            {% endif %}
-            
-            <!-- Last Page -->
+            {% endif %}            
             {% if pagination.show_last %}
                 <a href="{{ url_for('index', page=total_pages, **page_args) }}">{{ total_pages }}</a>
-            {% endif %}
-            
-            <!-- Next Button -->
+            {% endif %}            
             {% if page < total_pages %}
                 <a href="{{ url_for('index', page=page+1, **page_args) }}">Next &raquo;</a>
             {% else %}
@@ -270,7 +187,7 @@ def index():
     {% endif %}
 </body>
 </html>
-"""
+    """
     return render_template_string(
         html,
         events=events,
@@ -284,16 +201,15 @@ def index():
         search_term=search_term,
         total_events=total_events
     )
-
-
 @app.route('/clear', methods=['POST'])
 def clear_data():
-    conn = get_db_connection()
+    conn = db_manager._get_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
             "TRUNCATE TABLE events, raw_data RESTART IDENTITY CASCADE;")
         conn.commit()
+        print("Database cleared by user action.")
     except Exception as e:
         conn.rollback()
         print(f"Error clearing PostgreSQL database: {e}", file=sys.stderr)
@@ -301,15 +217,11 @@ def clear_data():
         cursor.close()
         conn.close()
     return redirect(url_for('index'))
-
-
 @app.route('/launch_manual_scrape', methods=['POST'])
 def launch_manual_scrape():
     clear_data()
     print("Dispatching ETL chain to Celery worker.")
     scrape_and_transform_chain.delay()
     return redirect(url_for('index'))
-
-
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=8000, debug=True)

@@ -12,7 +12,7 @@ def get_db_connection():
 celery_app=Celery('tasks',broker='redis://redis:6379/0',backend='redis://redis:6379/0')
 @celery_app.task
 def run_all_spiders_task():
-    print("--- Starting Full Scrape and Cleanup ---")
+    print("--- Scrape and Cleanup ---")
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -67,5 +67,7 @@ def scrape_and_transform_chain():
     workflow=chain(run_all_spiders_task.s(),transform_data_task.s())
     workflow.apply_async()
 
-celery_app.conf.beat_schedule={'run-full-etl-every-3-hours':{'task':'tasks.scrape_and_transform_chain','schedule':crontab(minute=0,hour='*/3'),'args':()}}
+celery_app.conf.beat_schedule={'run-full-etl-every-3-hours':
+    {'task':'tasks.scrape_and_transform_chain','schedule':
+        crontab(minute=0,hour='*/3'),'args':()}}
 celery_app.conf.timezone='UTC'

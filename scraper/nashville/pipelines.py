@@ -19,4 +19,3 @@ class PostgresPipeline:
             self.connection.rollback()
             spider.logger.error(f"Error saving raw item to database: {e}")
         return item
-
